@@ -67,23 +67,12 @@ function parseBudget(budgetString) {
 }
 
 // Main execution
-const inputData = $input.item.json;
-const budgetString = inputData.Answers?.Budget;
+const budgetString = $input.item.json.Answers?.Budget;
 
-let output = {
-    ...inputData,
-    budget_int: null,
-    parseError: null
-};
-
-if (budgetString) {
-    try {
-        output.budget_int = parseBudget(budgetString);
-    } catch (error) {
-        output.parseError = error.message;
-    }
-} else {
-    output.parseError = 'Budget field is missing or empty';
+if (!budgetString) {
+    throw new Error('Budget field is missing or empty');
 }
 
-return output;
+const budget_int = parseBudget(budgetString);
+
+return { budget_int };
