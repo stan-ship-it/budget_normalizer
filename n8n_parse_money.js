@@ -1,182 +1,84 @@
 /**
- * n8n Code Node - Monetary Value Parser
- * 
- * This script parses monetary values from input.Answers.Budget with currency symbols 
- * and thousand separators, returning the value as an integer (in minor units like cents).
- * 
- * Expected input structure: 
- *   - $input.item.json.Answers.Budget
- * 
- * Output:
- *   - budgetOriginal: The original budget string
- *   - budgetParsed: Integer value in minor units (cents)
- *   - budgetFormatted: Formatted as decimal (e.g., "1234.56")
- *   - parseError: Error message if parsing fails (null if successful)
+ * n8n Code Node - Simple Budget Parser
+ * Extracts numeric value from budget string and returns as integer
  */
 
-// Parse a monetary string to an integer value in minor units (cents/pence/etc.)
-function parseMoney(moneyString) {
-    if (typeof moneyString !== 'string') {
-        throw new Error('Input must be a string');
+function parseBudget(budgetString) {
+    if (typeof budgetString !== 'string' || !budgetString.trim()) {
+        throw new Error('Invalid budget string');
     }
-
-    // Trim whitespace
-    const trimmed = moneyString.trim();
     
-    if (!trimmed) {
-        throw new Error('Empty money string');
-    }
-
-    // Remove currency symbols (common ones)
-    const withoutCurrency = trimmed.replace(/^[$€£¥₹₽₱₩₪₴₦Rr₨₵₲₸₺₼₾₿¢฿₡₢₣₤₥₧₨₪₫₭₮₯₰₱₲₳₴₵₶₷₸₹₺₻₼₽₾₿﷼﹩＄￠￡￥￦]/g, '');
+    // Remove everything except digits, dots, commas, and minus sign
+    let cleaned = budgetString.replace(/[^\d.,-]/g, '');
     
-    // Remove any remaining currency codes (like USD, EUR, GBP at start or end)
-    const withoutCode = withoutCurrency.replace(/^[A-Z]{3}\s*/i, '').replace(/\s*[A-Z]{3}$/i, '');
+    // Remove thousand separators (dots or commas depending on context)
+    // If there are multiple separators, remove all but the last one
+    const dotCount = (cleaned.match(/\./g) || []).length;
+    const commaCount = (cleaned.match(/,/g) || []).length;
     
-    // Remove any remaining text/currency names
-    const cleanedText = withoutCode.trim();
+    // Determine what's the decimal separator (if any)
+    const lastDot = cleaned.lastIndexOf('.');
+    const lastComma = cleaned.lastIndexOf(',');
     
-    // Detect decimal separator by finding the last occurrence of . or ,
-    const lastDotIndex = cleanedText.lastIndexOf('.');
-    const lastCommaIndex = cleanedText.lastIndexOf(',');
-    
-    let decimalSeparator = '.';
-    let thousandSeparator = ',';
-    
-    // Determine which is decimal separator based on position
-    if (lastCommaIndex > lastDotIndex) {
-        // Comma comes after dot, so comma is decimal separator (e.g., "1.234,56")
-        decimalSeparator = ',';
-        thousandSeparator = '.';
-    } else if (lastDotIndex > lastCommaIndex) {
-        // Dot comes after comma, so dot is decimal separator (e.g., "1,234.56")
-        decimalSeparator = '.';
-        thousandSeparator = ',';
-    } else if (lastDotIndex === -1 && lastCommaIndex === -1) {
-        // No separators at all
-        decimalSeparator = null;
-        thousandSeparator = null;
-    } else if (lastDotIndex !== -1 && lastCommaIndex === -1) {
-        // Only dots - check if it's thousands or decimal
-        const afterLastDot = cleanedText.substring(lastDotIndex + 1);
-        if (afterLastDot.length === 2) {
-            // Likely decimal (e.g., "1234.56")
-            decimalSeparator = '.';
-            thousandSeparator = ',';
-        } else if (afterLastDot.length === 3) {
-            // Likely thousands (e.g., "1.234")
-            decimalSeparator = null;
-            thousandSeparator = '.';
+    if (lastComma > lastDot) {
+        // Comma is decimal separator (European format: 1.300,50)
+        const afterComma = cleaned.substring(lastComma + 1);
+        if (afterComma.length <= 2) {
+            // It's a decimal separator
+            cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+        } else {
+            // It's a thousand separator
+            cleaned = cleaned.replace(/,/g, '');
         }
-    } else if (lastCommaIndex !== -1 && lastDotIndex === -1) {
-        // Only commas - check if it's thousands or decimal
-        const afterLastComma = cleanedText.substring(lastCommaIndex + 1);
-        if (afterLastComma.length === 2) {
-            // Likely decimal (e.g., "1234,56")
-            decimalSeparator = ',';
-            thousandSeparator = '.';
-        } else if (afterLastComma.length === 3) {
-            // Likely thousands (e.g., "1,234")
-            decimalSeparator = null;
-            thousandSeparator = ',';
+    } else if (lastDot > lastComma) {
+        // Dot is decimal separator (US format: 1,300.50)
+        const afterDot = cleaned.substring(lastDot + 1);
+        if (afterDot.length <= 2) {
+            // It's a decimal separator
+            cleaned = cleaned.replace(/,/g, '');
+        } else {
+            // It's a thousand separator
+            cleaned = cleaned.replace(/\./g, '');
+        }
+    } else if (lastComma !== -1) {
+        // Only comma exists
+        const afterComma = cleaned.substring(lastComma + 1);
+        if (afterComma.length <= 2) {
+            cleaned = cleaned.replace(',', '.');
+        } else {
+            cleaned = cleaned.replace(/,/g, '');
+        }
+    } else if (lastDot !== -1) {
+        // Only dot exists
+        const afterDot = cleaned.substring(lastDot + 1);
+        if (afterDot.length > 2) {
+            cleaned = cleaned.replace(/\./g, '');
         }
     }
     
-    let integerPart = '';
-    let decimalPart = '';
+    // Parse as float and round to integer
+    const value = parseFloat(cleaned);
     
-    if (decimalSeparator && cleanedText.includes(decimalSeparator)) {
-        const parts = cleanedText.split(decimalSeparator);
-        integerPart = parts[0];
-        decimalPart = parts.slice(1).join(''); // In case there are multiple separators
-    } else {
-        integerPart = cleanedText;
-        decimalPart = '00';
+    if (isNaN(value)) {
+        throw new Error('Could not parse budget value');
     }
     
-    // Remove thousand separators from integer part
-    if (thousandSeparator) {
-        integerPart = integerPart.replace(new RegExp('\\' + thousandSeparator, 'g'), '');
-    }
-    
-    // Remove any spaces
-    integerPart = integerPart.replace(/\s/g, '');
-    decimalPart = decimalPart.replace(/\s/g, '');
-    
-    // Handle negative values
-    const isNegative = integerPart.includes('-') || integerPart.includes('(');
-    integerPart = integerPart.replace(/[-\(\)]/g, '');
-    
-    // Validate that we only have digits left
-    if (!/^\d*$/.test(integerPart)) {
-        throw new Error(`Invalid characters in integer part: ${moneyString}`);
-    }
-    
-    if (!/^\d*$/.test(decimalPart)) {
-        throw new Error(`Invalid characters in decimal part: ${moneyString}`);
-    }
-    
-    // Default to 0 if empty
-    if (!integerPart) {
-        integerPart = '0';
-    }
-    
-    // Ensure decimal part is exactly 2 digits (pad or truncate)
-    if (!decimalPart || decimalPart === '') {
-        decimalPart = '00';
-    } else if (decimalPart.length === 1) {
-        decimalPart = decimalPart + '0';
-    } else if (decimalPart.length > 2) {
-        // Round if more than 2 decimal places
-        const extraDigits = decimalPart.substring(2);
-        decimalPart = decimalPart.substring(0, 2);
-        if (parseInt(extraDigits[0]) >= 5) {
-            // Round up
-            let decimalValue = parseInt(decimalPart) + 1;
-            if (decimalValue >= 100) {
-                integerPart = (parseInt(integerPart) + 1).toString();
-                decimalPart = '00';
-            } else {
-                decimalPart = decimalValue.toString().padStart(2, '0');
-            }
-        }
-    }
-    
-    // Combine integer and decimal parts
-    const result = parseInt(integerPart + decimalPart);
-    
-    return isNegative ? -result : result;
+    return Math.round(value);
 }
 
-// Main n8n code execution
-// Access the input data from the previous node
+// Main execution
 const inputData = $input.item.json;
-
-// Get the Budget value from Answers
 const budgetString = inputData.Answers?.Budget;
 
-// Initialize output object
 let output = {
-    ...inputData, // Preserve all original data
-    budgetOriginal: budgetString,
-    budgetParsed: null,
-    budgetFormatted: null,
+    ...inputData,
+    budget_int: null,
     parseError: null
 };
 
-// Try to parse the budget
 if (budgetString) {
     try {
-        const parsedValue = parseMoney(budgetString);
-        
-        // Convert back to formatted decimal string
-        const dollars = Math.floor(Math.abs(parsedValue) / 100);
-        const cents = Math.abs(parsedValue) % 100;
-        const sign = parsedValue < 0 ? '-' : '';
-        const formatted = `${sign}${dollars}.${cents.toString().padStart(2, '0')}`;
-        
-        output.budgetParsed = parsedValue;
-        output.budgetFormatted = formatted;
+        output.budget_int = parseBudget(budgetString);
     } catch (error) {
         output.parseError = error.message;
     }
@@ -184,5 +86,4 @@ if (budgetString) {
     output.parseError = 'Budget field is missing or empty';
 }
 
-// Return the output (n8n expects return value in this format)
 return output;
